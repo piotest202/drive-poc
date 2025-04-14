@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Picker API Quickstart</title>
+        <meta charset="utf-8" />
+    </head>
+    <body>
+        <p>Google Picker API — All File Types</p>
+
+        <!-- Buttons to initiate auth and sign out -->
+        <button id="authorize_button"
+            onclick="handleAuthClick()">Authorize</button>
+        <button id="signout_button" onclick="handleSignoutClick()">Sign
+            Out</button>
+
+        <pre id="content" style="white-space: pre-wrap;"></pre>
+
+        <script type="text/javascript">
+      const SCOPES = [
+        'https://www.googleapis.com/auth/drive.file',
+        // 'https://www.googleapis.com/auth/drive.readonly',
+        // 'https://www.googleapis.com/auth/drive.metadata.readonly'
+      ].join(' ');
+
+      const CLIENT_ID = '828202658225-pno2cj3g3sokvtmq5nlq8emus32lq1e5.apps.googleusercontent.com';
+      const API_KEY = 'AIzaSyBaKRWYCH5JrjSOUDpwi4e4DZnBN2fK-is';
+      const APP_ID = 'test-poc-435106';
+
+      let tokenClient;
+      let accessToken = null;
+      let pickerInited = false;
+      let gisInited = false;
+
+      document.getElementById('authorize_button').style.visibility = 'hidden';
+      document.getElementById('signout_button').style.visibility = 'hidden';
+
+      function verifyApiKey() {
+        if (!API_KEY) {
+          console.error("❌ API Key is not set!");
+          return false;
+        }
+        if (API_KEY === 'your_api_key' || API_KEY.startsWith('AIzaSy...')) {
+          console.error("❌ Please replace the API Key with your actual key!");
+          return false;
+        }
+        return true;
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        if (!verifyApiKey()) {
+          document.getElementById('content').innerText = 'Error: Invalid API Key configuration';
+        }
+      });
+
+      function gapiLoaded() {
+        gapi.load('client:picker', initializePicker);
+      }
+
+      async function initializePicker() {
+        try {
+          await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
+          pickerInited = true;
+          maybeEnableButtons();
+        } catch (error) {
+          console.error("❌ Error initializing Picker:", error);
+        }
+      }
+
+      function gisLoaded() {
+        try {
+          tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: '', // set later
+          });
+          gisInited = true;
+          maybeEnableButtons();
+        } catch (error) {
+          console.error("❌ Error in GIS initialization:", error);
+        }
+      }
+
+      function maybeEnableButtons() {
+        if (pickerInited && gisInited) {
+          document.getElementById('authorize_button').style.visibility = 'visible';
+        }
+      }
+
+      function handleAuthClick() {
+        if (!verifyApiKey()) {
+          return;
+        }
+
+        tokenClient.callback = async (response) => {
+          if (response.error !== undefined) {
+            console.error("❌ Authentication error:", response.error);
+            return;
+          }
+          accessToken = response.access_token;
+          document.getElementById('signout_button').style.visibility = 'visible';
+          document.getElementById('authorize_button').innerText = 'Refresh';
+          await createPicker();
+        };
+
+        if (accessToken === null) {
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+        } else {
+          tokenClient.requestAccessToken({ prompt: '' });
+        }
+      }
+
+      function handleSignoutClick() {
+        if (accessToken) {
+          google.accounts.oauth2.revoke(accessToken);
+          accessToken = null;
+          document.getElementById('content').innerText = '';
+          document.getElementById('authorize_button').innerText = 'Authorize';
+          document.getElementById('signout_button').style.visibility = 'hidden';
+        }
+      }
+
+      function createPicker() {
+        try {
+          const view = new google.picker.View(google.picker.ViewId.DOCS);
+          // No mimeTypes restriction — allows all files
+
+          const picker = new google.picker.PickerBuilder()
+            .enableFeature(google.picker.Feature.NAV_HIDDEN)
+            .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+            .setDeveloperKey(API_KEY)
+            .setAppId(APP_ID)
+            .setOAuthToken(accessToken)
+            .addView(view)
+            .addView(new google.picker.DocsUploadView())
+            .setCallback(pickerCallback)
+            .setOrigin(window.location.protocol + '//' + window.location.host)
+            .build();
+
+          picker.setVisible(true);
+        } catch (error) {
+          console.error("❌ Error creating picker:", error);
+        }
+      }
+
+      async function pickerCallback(data) {
+        if (data.action === google.picker.Action.PICKED) {
+          let text = `Picker response: \n${JSON.stringify(data, null, 2)}\n`;
+          const document = data[google.picker.Response.DOCUMENTS][0];
+          const fileId = document[google.picker.Document.ID];
+
+          try {
+            const res = await gapi.client.drive.files.get({
+              'fileId': fileId,
+              'fields': '*',
+            });
+            text += `Drive API response for first document: \n${JSON.stringify(res.result, null, 2)}\n`;
+            document.getElementById('content').innerText = text;
+          } catch (error) {
+            console.error("❌ Error fetching file details:", error);
+          }
+        }
+      }
+    </script>
+
+        <!-- Load Google APIs -->
+        <script async defer src="https://apis.google.com/js/api.js"
+            onload="gapiLoaded()"></script>
+        <script async defer src="https://accounts.google.com/gsi/client"
+            onload="gisLoaded()"></script>
+
+        <!-- 
+      ⚠️ Note:
+      If you're running this locally and seeing Cross-Origin-Opener-Policy warnings:
+      - Avoid serving the page with COOP/COEP headers
+      - Or deploy on a public HTTPS URL without strict COOP headers (Netlify, Vercel etc.)
+    -->
+
+    </body>
+</html>
